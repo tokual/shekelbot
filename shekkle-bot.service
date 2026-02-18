@@ -1,0 +1,14 @@
+[Unit]
+Description=Shekkle Telegram Bot
+After=network.target
+
+[Service]
+# Modify User and paths as needed
+User=pi
+WorkingDirectory=/home/pi/shekklepredictions
+ExecStart=/home/pi/shekklepredictions/venv/bin/python main.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
