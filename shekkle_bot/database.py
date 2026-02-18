@@ -326,7 +326,14 @@ def get_bet_wagers(bet_id):
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     try:
-        c.execute("SELECT * FROM wagers WHERE bet_id = ?", (bet_id,))
+        # Join with users to get username
+        query = """
+            SELECT w.*, u.username 
+            FROM wagers w 
+            LEFT JOIN users u ON w.user_id = u.user_id 
+            WHERE w.bet_id = ?
+        """
+        c.execute(query, (bet_id,))
         return [dict(row) for row in c.fetchall()]
     except Exception as e:
         logger.error(f"Error getting wagers for bet {bet_id}: {e}")

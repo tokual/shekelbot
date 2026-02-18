@@ -44,6 +44,7 @@ def main():
     application.add_handler(CommandHandler("bets", betting.list_bets))
     application.add_handler(CommandHandler("wager", betting.wager))
     application.add_handler(CallbackQueryHandler(betting.wager_button, pattern='^wager:'))
+    application.add_handler(CallbackQueryHandler(betting.view_bets_button, pattern='^view_bets:'))
 
     # Add Admin Handlers
     application.add_handler(CommandHandler("resolve", admin.resolve))

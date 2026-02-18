@@ -102,6 +102,9 @@ async def receive_option_b(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [
                 InlineKeyboardButton(f"Bet {DEFAULT_WAGER_AMOUNT} {CURRENCY_NAME} on {context.user_data['option_a']}", callback_data=f"wager:{new_id}:A"),
                 InlineKeyboardButton(f"Bet {DEFAULT_WAGER_AMOUNT} {CURRENCY_NAME} on {context.user_data['option_b']}", callback_data=f"wager:{new_id}:B"),
+            ],
+            [
+                InlineKeyboardButton("View Bets", callback_data=f"view_bets:{new_id}")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -152,6 +155,9 @@ async def list_bets(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [
                 InlineKeyboardButton(f"Bet {DEFAULT_WAGER_AMOUNT} {CURRENCY_NAME} on {bet['option_a']}", callback_data=f"wager:{bet['id']}:A"),
                 InlineKeyboardButton(f"Bet {DEFAULT_WAGER_AMOUNT} {CURRENCY_NAME} on {bet['option_b']}", callback_data=f"wager:{bet['id']}:B"),
+            ],
+            [
+                InlineKeyboardButton("View Bets", callback_data=f"view_bets:{bet['id']}")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -218,6 +224,72 @@ async def wager(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"✅ {message}\nWagered {amount} {CURRENCY_NAME} on #{bet_id} Choice {choice}.")
     else:
         await update.message.reply_text(f"❌ {message}")
+
+async def view_bets_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Shows the current bets and pool information for a bet."""
+    query = update.callback_query
+    # Split the data formatted as view_bets:{bet_id}
+    try:
+        _, bet_id_str = query.data.split(':')
+        bet_id = int(bet_id_str)
+    except ValueError:
+        await query.answer("Invalid request.")
+        return
+
+    bet = db.get_bet(bet_id)
+    if not bet:
+        await query.answer("Bet not found or deleted.", show_alert=True)
+        return
+
+    # Acknowledge the callback so the spinner stops
+    await query.answer()
+
+    wagers = db.get_bet_wagers(bet_id)
+
+    # Calculate pools
+    pool_a = sum(w['amount'] for w in wagers if w['choice'] == 'A')
+    pool_b = sum(w['amount'] for w in wagers if w['choice'] == 'B')
+    total_pool = pool_a + pool_b
+
+    # Determine ratios (Total Pool / Winning Side Pool)
+    # If pool_a is 0, multiplier is technically infinite if you put in something, but let's just say 0 for display or handle it gracefully.
+    ratio_a = (total_pool / pool_a) if pool_a > 0 else 0.0
+    ratio_b = (total_pool / pool_b) if pool_b > 0 else 0.0
+
+    # Format lists
+    list_a = []
+    list_b = []
+    for w in wagers:
+        # Username might be None joined from DB
+        name = w.get('username') or f"User {w['user_id']}"
+        entry = f"{name} ({w['amount']})"
+        if w['choice'] == 'A':
+            list_a.append(entry)
+        else:
+            list_b.append(entry)
+
+    # Helper to format list string
+    def format_list(l):
+        if not l:
+            return "None"
+        return ", ".join(l)
+
+    msg = (
+        f"📊 *Bet #{bet_id} Status*\n"
+        f"📝 {bet['description']}\n\n"
+        f"🅰️ *Option A*: {bet['option_a']}\n"
+        f"💰 Pool: {pool_a} {CURRENCY_NAME}\n"
+        f"📈 Payout Ratio: {ratio_a:.2f}x\n"
+        f"👥 Bets: {format_list(list_a)}\n\n"
+        f"🅱️ *Option B*: {bet['option_b']}\n"
+        f"💰 Pool: {pool_b} {CURRENCY_NAME}\n"
+        f"📈 Payout Ratio: {ratio_b:.2f}x\n"
+        f"👥 Bets: {format_list(list_b)}\n\n"
+        f"Total Pool: {total_pool} {CURRENCY_NAME}"
+    )
+
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=msg, parse_mode='Markdown')
+
 
 # Conversation Handler definition
 createbet_conv_handler = ConversationHandler(
