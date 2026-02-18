@@ -1,12 +1,12 @@
 [Unit]
-Description=Shekkle Telegram Bot
+Description=Shekel Telegram Bot
 After=network.target
 
 [Service]
 # Modify User and paths as needed
-User=pi
-WorkingDirectory=/home/pi/shekklepredictions
-ExecStart=/home/pi/shekklepredictions/venv/bin/python main.py
+User=pi401
+WorkingDirectory=/home/pi/shekelbot
+ExecStart=/home/pi/shekelbot/venv/bin/python main.py
 Restart=always
 RestartSec=10
 
