@@ -248,59 +248,69 @@ async def view_bets_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("Invalid request.")
         return
 
-    bet = db.get_bet(bet_id)
-    if not bet:
-        await query.answer("Bet not found or deleted.", show_alert=True)
-        return
-
-    # Acknowledge the callback so the spinner stops
+    # Acknowledge callback immediately
     await query.answer()
 
+    bet = db.get_bet(bet_id)
+    if not bet:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Bet not found or deleted.")
+        return
+
     wagers = db.get_bet_wagers(bet_id)
+    
+    # Organize wagers by choice
+    pool_a_list = [w for w in wagers if w['choice'] == 'A']
+    pool_b_list = [w for w in wagers if w['choice'] == 'B']
+    
+    amount_a = sum(w['amount'] for w in pool_a_list)
+    amount_b = sum(w['amount'] for w in pool_b_list)
+    total_pool = amount_a + amount_b
 
-    # Calculate pools
-    pool_a = sum(w['amount'] for w in wagers if w['choice'] == 'A')
-    pool_b = sum(w['amount'] for w in wagers if w['choice'] == 'B')
-    total_pool = pool_a + pool_b
+    # Calculate theoretical multipliers (Total / Side)
+    # If side has 0, multiplier is technically N/A or Infinite. Let's show 0.00x
+    mult_a = (total_pool / amount_a) if amount_a > 0 else 0.0
+    mult_b = (total_pool / amount_b) if amount_b > 0 else 0.0
 
-    # Determine ratios (Total Pool / Winning Side Pool)
-    # If pool_a is 0, multiplier is technically infinite if you put in something, but let's just say 0 for display or handle it gracefully.
-    ratio_a = (total_pool / pool_a) if pool_a > 0 else 0.0
-    ratio_b = (total_pool / pool_b) if pool_b > 0 else 0.0
-
-    # Format lists
-    list_a = []
-    list_b = []
-    for w in wagers:
-        # Username might be None joined from DB
-        name = w.get('username') or f"User {w['user_id']}"
-        entry = f"{name} ({w['amount']})"
-        if w['choice'] == 'A':
-            list_a.append(entry)
-        else:
-            list_b.append(entry)
-
-    # Helper to format list string
-    def format_list(l):
-        if not l:
+    # Format wagers list
+    # We must escape names too as they can contain markdown chars
+    def format_wager_list(w_list):
+        if not w_list:
             return "None"
-        return ", ".join(l)
+        formatted_entries = []
+        for w in w_list:
+            raw_name = w.get('username') or f"User {w['user_id']}"
+            safe_name = escape_markdown(raw_name)
+            # escape amount just in case? Numbers are safe though.
+            formatted_entries.append(f"{safe_name} ({w['amount']})")
+        return ", ".join(formatted_entries)
+
+    bets_a_str = format_wager_list(pool_a_list)
+    bets_b_str = format_wager_list(pool_b_list)
+
+    # Escape bet details
+    desc = escape_markdown(bet['description'])
+    opt_a = escape_markdown(bet['option_a'])
+    opt_b = escape_markdown(bet['option_b'])
 
     msg = (
         f"📊 *Bet #{bet_id} Status*\n"
-        f"📝 {bet['description']}\n\n"
-        f"🅰️ *Option A*: {bet['option_a']}\n"
-        f"💰 Pool: {pool_a} {CURRENCY_NAME}\n"
-        f"📈 Payout Ratio: {ratio_a:.2f}x\n"
-        f"👥 Bets: {format_list(list_a)}\n\n"
-        f"🅱️ *Option B*: {bet['option_b']}\n"
-        f"💰 Pool: {pool_b} {CURRENCY_NAME}\n"
-        f"📈 Payout Ratio: {ratio_b:.2f}x\n"
-        f"👥 Bets: {format_list(list_b)}\n\n"
+        f"📝 {desc}\n\n"
+        f"🅰️ *Option A*: {opt_a}\n"
+        f"💰 Pool: {amount_a} {CURRENCY_NAME}\n"
+        f"📈 Payout Ratio: {mult_a:.2f}x\n"
+        f"👥 Bets: {bets_a_str}\n\n"
+        f"🅱️ *Option B*: {opt_b}\n"
+        f"💰 Pool: {amount_b} {CURRENCY_NAME}\n"
+        f"📈 Payout Ratio: {mult_b:.2f}x\n"
+        f"👥 Bets: {bets_b_str}\n\n"
         f"Total Pool: {total_pool} {CURRENCY_NAME}"
     )
 
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=msg, parse_mode='Markdown')
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id, 
+        text=msg, 
+        parse_mode='Markdown'
+    )
 
 
 # Conversation Handler definition
