@@ -1,8 +1,8 @@
 import logging
 import os
-from telegram import BotCommand
+from telegram import BotCommand, BotCommandScopeChat, BotCommandScopeDefault
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler
-from shekkle_bot.config import TOKEN
+from shekkle_bot.config import TOKEN, ADMIN_IDS
 from shekkle_bot.database import init_db
 from shekkle_bot.handlers import general, betting, admin, leaderboard
 from shekkle_bot import jobs
@@ -13,7 +13,7 @@ logging.basicConfig(
     level=logging.INFO
 )
 async def post_init(application):
-    bot_commands = [
+    user_commands = [
         BotCommand("start", "Join"),
         BotCommand("daily", "Claim reward"),
         BotCommand("balance", "Check funds"),
@@ -22,7 +22,21 @@ async def post_init(application):
         BotCommand("leaderboard", "Top winners"),
         BotCommand("loserboard", "Top losers"),
     ]
-    await application.bot.set_my_commands(bot_commands)
+    
+    admin_commands = user_commands + [
+        BotCommand("resolve", "Settle bet (Admin)"),
+        BotCommand("give", "Add funds (Admin)"),
+    ]
+    
+    # Set commands for general users (default scope)
+    await application.bot.set_my_commands(user_commands, scope=BotCommandScopeDefault())
+    
+    # Set commands for admins specifically in their private chat
+    for admin_id in ADMIN_IDS:
+        try:
+            await application.bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=admin_id))
+        except Exception as e:
+            logging.warning(f"Could not set commands for admin {admin_id}: {e}")
 
 
 def main():
