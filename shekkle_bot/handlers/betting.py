@@ -11,6 +11,18 @@ from telegram.ext import (
 )
 import shekkle_bot.database as db
 from shekkle_bot.config import CURRENCY_NAME, DEFAULT_WAGER_AMOUNT
+# Add escape_markdown function right here or import it if created in formatters.py
+# Since I created formatters.py but didn't link it properly or ensure it exist, 
+# I will define a helper here to be safe and update imports.
+
+def escape_md(text):
+    """Helper to escape markdown characters."""
+    if not text:
+        return ""
+    # Characters to escape in MarkdownV2: _ * [ ] ( ) ~ ` > # + - = | { } . !
+    # But we seem to use Markdown (v1) or mixed. The error usually comes from unclosed * or _
+    # Let's escape * and _ and ` at minimum.
+    return str(text).replace("*", "").replace("_", "").replace("`", "")
 
 # Enable logging
 logger = logging.getLogger(__name__)
@@ -109,12 +121,17 @@ async def receive_option_b(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
+        # Escape user provided content for Markdown
+        desc = escape_md(context.user_data['description'])
+        opt_a = escape_md(context.user_data['option_a'])
+        opt_b = escape_md(context.user_data['option_b'])
+
         await update.message.reply_text(
             f"✅ New Bet Created! #{new_id}\n\n"
-            f"📝 {context.user_data['description']}\n"
+            f"📝 {desc}\n"
             f"⏰ Deadline: {context.user_data['deadline']}\n"
-            f"🅰️ {context.user_data['option_a']}\n"
-            f"🅱️ {context.user_data['option_b']}\n\n"
+            f"🅰️ {opt_a}\n"
+            f"🅱️ {opt_b}\n\n"
             f"To wager custom amount use:\n"
             f"`/wager {new_id} A <amount>` or `/wager {new_id} B <amount>`",
             parse_mode='Markdown',
@@ -162,12 +179,18 @@ async def list_bets(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
+        # Escape user provided content
+        desc = escape_md(bet['description'])
+        opt_a = escape_md(bet['option_a'])
+        opt_b = escape_md(bet['option_b'])
+
         msg = (
-            f"📢 *#{bet['id']}*: {bet['description']}\n"
-            f"🅰️ {bet['option_a']} vs 🅱️ {bet['option_b']}\n"
+            f"📢 *#{bet['id']}*: {desc}\n"
+            f"🅰️ {opt_a} vs 🅱️ {opt_b}\n"
             f"⏰ Deadline: {d_str}\n"
             f"Use `/wager {bet['id']} A <amount>` to bet custom amount!"
         )
+
         
         await update.message.reply_text(msg, parse_mode='Markdown', reply_markup=reply_markup)
 
