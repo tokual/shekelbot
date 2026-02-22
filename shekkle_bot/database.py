@@ -48,11 +48,19 @@ def init_db():
             bet_id INTEGER,
             choice TEXT, -- 'A', 'B'
             amount INTEGER,
+            placed_at TEXT,
             FOREIGN KEY(user_id) REFERENCES users(user_id),
             FOREIGN KEY(bet_id) REFERENCES bets(id)
         )
     """)
     
+    # Check if placed_at exists in wagers (migration for existing dbs)
+    try:
+        c.execute("SELECT placed_at FROM wagers LIMIT 1")
+    except sqlite3.OperationalError:
+        logger.info("Migrating wagers table: adding placed_at column")
+        c.execute("ALTER TABLE wagers ADD COLUMN placed_at TEXT")
+
     # Commit and close
     conn.commit()
     conn.close()
@@ -305,9 +313,9 @@ def place_wager(user_id, bet_id, choice, amount):
         
         # Add wager
         c.execute("""
-            INSERT INTO wagers (user_id, bet_id, choice, amount)
-            VALUES (?, ?, ?, ?)
-        """, (user_id, bet_id, choice, amount))
+            INSERT INTO wagers (user_id, bet_id, choice, amount, placed_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (user_id, bet_id, choice, amount, datetime.now().isoformat()))
         
         conn.commit()
         return True, "Wager placed successfully!"
@@ -341,10 +349,11 @@ def get_bet_wagers(bet_id):
     finally:
         conn.close()
 
-def resolve_bet(bet_id, outcome):
+def resolve_bet(bet_id, outcome, cutoff_dt=None):
     """
     Resolves a bet, distributes winnings to users.
     Outcome must be 'A' or 'B'.
+    cutoff_dt: If provided, refunds all wagers placed after this datetime.
     Returns (Success, Message).
     """
     if outcome not in ('A', 'B'):
@@ -367,29 +376,75 @@ def resolve_bet(bet_id, outcome):
             return False, f"Bet {bet_id} is already resolved."
 
         # Get all wagers for this bet
-        c.execute("SELECT user_id, choice, amount FROM wagers WHERE bet_id = ?", (bet_id,))
-        wagers = c.fetchall()
+        # Try to select placed_at, fall back to NULL if column somehow missing (should be handled by migration code but safe to be explicit)
+        try:
+             c.execute("SELECT user_id, choice, amount, placed_at FROM wagers WHERE bet_id = ?", (bet_id,))
+        except sqlite3.OperationalError:
+             # Fallback if migration failed or transient schema issue
+             logger.warning("placed_at column missing in wagers table during resolve")
+             c.execute("SELECT user_id, choice, amount, NULL as placed_at FROM wagers WHERE bet_id = ?", (bet_id,))
+             
+        all_wagers = c.fetchall()
 
-        total_pool = sum(w[2] for w in wagers)
+        valid_wagers = []
+        refunded_count = 0
+        refunded_gross = 0
+
+        # Parse cutoff once
+        cutoff_val = None
+        if cutoff_dt:
+             if isinstance(cutoff_dt, str):
+                 try:
+                     cutoff_val = datetime.fromisoformat(cutoff_dt)
+                 except ValueError:
+                     logger.error(f"Invalid cutoff format: {cutoff_dt}")
+             elif isinstance(cutoff_dt, datetime):
+                 cutoff_val = cutoff_dt
+
+        for row in all_wagers:
+            user_id, choice, amount, placed_at_str = row
+            
+            should_keep = True
+            if cutoff_val and placed_at_str:
+                try:
+                    placed_at = datetime.fromisoformat(placed_at_str)
+                    if placed_at > cutoff_val:
+                        should_keep = False
+                except ValueError:
+                    pass # Keep if date is invalid
+
+            if should_keep:
+                valid_wagers.append(row)
+            else:
+                # Refund
+                c.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, user_id))
+                refunded_count += 1
+                refunded_gross += amount
+
+        total_pool = sum(w[2] for w in valid_wagers)
         # outcome is 'A' or 'B'
-        winning_wagers = [w for w in wagers if w[1] == outcome]
+        winning_wagers = [w for w in valid_wagers if w[1] == outcome]
         winning_pool = sum(w[2] for w in winning_wagers)
 
         # Update status
         c.execute("UPDATE bets SET status = 'RESOLVED', outcome = ? WHERE id = ?", (outcome, bet_id))
 
+        msg_prefix = ""
+        if refunded_count > 0:
+            msg_prefix = f"⚠️ {refunded_count} wagers placed after cutoff were refunded ({refunded_gross} total).\n"
+
         # Case 1: No winners (Refund everyone if pool > 0)
         if winning_pool == 0:
             if total_pool > 0:
                 # Refund everyone
-                for user_id, choice, amount in wagers:
+                for user_id, choice, amount, _ in valid_wagers:
                     c.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, user_id))
                 
                 conn.commit()
-                return True, f"No one bet on {outcome}. All {total_pool} refunded."
+                return True, f"{msg_prefix}No one bet on {outcome}. All {total_pool} refunded."
             else:
                 conn.commit()
-                return True, f"Bet resolved to {outcome}. No wagers were placed."
+                return True, f"{msg_prefix}Bet resolved to {outcome}. No valid wagers remained."
 
         # Case 2: Winners exist
         # Calculate ratio: (Total Pool) / (Winning Pool)
@@ -397,13 +452,13 @@ def resolve_bet(bet_id, outcome):
         payout_ratio = total_pool / winning_pool
         
         winners_count = 0
-        for user_id, choice, amount in winning_wagers:
+        for user_id, choice, amount, _ in winning_wagers:
             payout = int(amount * payout_ratio) # integer math acts as floor
             c.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (payout, user_id))
             winners_count += 1
             
         conn.commit()
-        return True, f"Bet resolved to {outcome}. {winners_count} winners shared pot of {total_pool}. Multiplier: x{payout_ratio:.2f}"
+        return True, f"{msg_prefix}Bet resolved to {outcome}. {winners_count} winners shared pot of {total_pool}. Multiplier: x{payout_ratio:.2f}"
 
     except Exception as e:
         conn.rollback()

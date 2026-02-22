@@ -2,11 +2,12 @@ from telegram import Update
 from telegram.ext import ContextTypes
 import shekkle_bot.database as db
 from shekkle_bot.config import ADMIN_IDS
+from datetime import datetime
 
 async def resolve(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Admin command to resolve a bet.
-    Usage: /resolve <bet_id> <outcome (A/B)>
+    Usage: /resolve <bet_id> <outcome (A/B)> [cutoff_time (YYYY-MM-DD HH:MM)]
     """
     user_id = update.effective_user.id
     if user_id not in ADMIN_IDS:
@@ -14,7 +15,7 @@ async def resolve(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not context.args or len(context.args) < 2:
-        await update.message.reply_text("Usage: /resolve <bet_id> <outcome (A/B)>")
+        await update.message.reply_text("Usage: /resolve <bet_id> <outcome (A/B)> [YYYY-MM-DD HH:MM]")
         return
 
     bet_id_str = context.args[0]
@@ -30,7 +31,21 @@ async def resolve(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Error: Outcome must be 'A' or 'B'.")
         return
 
-    success, message = db.resolve_bet(bet_id, outcome)
+    cutoff_dt = None
+    if len(context.args) > 2:
+        cutoff_str = " ".join(context.args[2:])
+        try:
+            # Try ISO format first
+            cutoff_dt = datetime.fromisoformat(cutoff_str)
+        except ValueError:
+            try:
+                # Try specific format requested
+                cutoff_dt = datetime.strptime(cutoff_str, "%Y-%m-%d %H:%M")
+            except ValueError:
+                await update.message.reply_text("❌ Invalid date format. Use YYYY-MM-DD HH:MM or ISO format.")
+                return
+
+    success, message = db.resolve_bet(bet_id, outcome, cutoff_dt)
     await update.message.reply_text(message)
 
 async def add_funds(update: Update, context: ContextTypes.DEFAULT_TYPE):
