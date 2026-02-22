@@ -3,6 +3,7 @@ import datetime
 from telegram.ext import ContextTypes
 from shekkle_bot.database import get_expired_open_bets, update_bet_status
 from shekkle_bot.config import ADMIN_IDS
+from shekkle_bot.utils.formatters import escape_markdown
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -23,13 +24,18 @@ async def check_deadlines(context: ContextTypes.DEFAULT_TYPE):
         for bet in expired_bets:
             # bet is a dict: {'id': ..., 'description': ...}
             bet_id = bet['id']
-            description = bet['description']
+            description = escape_markdown(bet['description'])
             
             # Update status to PENDING
             update_bet_status(bet_id, 'PENDING_RESOLUTION')
             logger.info(f"Bet {bet_id} expired. Status updated to PENDING_RESOLUTION.")
             
             # Notify Admins
+            # Using MarkdownV2 style escaping but parse_mode='Markdown' (v1) in original code.
+            # escape_markdown function escapes both * and _ which works for v1 too mostly if consistent.
+            # But v1 is tricky. Let's stick with what works for v1: *bold*, _italic_, `code`.
+            # If description has *, we escaped it to \*. v1 supports \*.
+            
             message = (
                 f"🚨 *Bet Expired!* 🚨\n\n"
                 f"ID: `{bet_id}`\n"
