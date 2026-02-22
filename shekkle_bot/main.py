@@ -4,7 +4,7 @@ from telegram import BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler
 from shekkle_bot.config import TOKEN
 from shekkle_bot.database import init_db
-from shekkle_bot.handlers import general, betting, admin
+from shekkle_bot.handlers import general, betting, admin, leaderboard
 from shekkle_bot import jobs
 
 # Configure logging
@@ -19,7 +19,8 @@ async def post_init(application):
         BotCommand("balance", "Check funds"),
         BotCommand("createbet", "New bet"),
         BotCommand("bets", "List open bets"),
-        BotCommand("wager", "Place bet (id, choice, amount)"),
+        BotCommand("leaderboard", "Top winners"),
+        BotCommand("loserboard", "Top losers"),
     ]
     await application.bot.set_my_commands(bot_commands)
 
@@ -38,10 +39,15 @@ def main():
     application.add_handler(CommandHandler("start", general.start))
     application.add_handler(CommandHandler("balance", general.balance))
     application.add_handler(CommandHandler("daily", general.daily))
+    
+    # Add Leaderboard Handlers
+    application.add_handler(CommandHandler("leaderboard", leaderboard.show_leaderboard))
+    application.add_handler(CommandHandler("loserboard", leaderboard.show_loserboard))
 
     # Add Betting Handlers
     application.add_handler(betting.createbet_conv_handler)
     application.add_handler(CommandHandler("bets", betting.list_bets))
+
     application.add_handler(CommandHandler("wager", betting.wager))
     application.add_handler(CallbackQueryHandler(betting.wager_button, pattern='^wager:'))
     application.add_handler(CallbackQueryHandler(betting.view_bets_button, pattern='^view_bets:'))
