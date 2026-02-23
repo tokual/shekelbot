@@ -579,21 +579,6 @@ def get_leaderboard_data():
 
 def get_expired_open_bets(current_time_iso):
     """
-    Returns a list of bets that are OPEN and whose deadline has passed.
-    """
-    conn = get_connection()
-    c = conn.cursor()
-    try:
-        c.execute("SELECT id, description, option_a, option_b FROM bets WHERE status = 'OPEN' AND deadline <= ?", (current_time_iso,))
-        return c.fetchall()
-    except Exception as e:
-        logger.error(f"Error fetching expired bets: {e}")
-        return []
-    finally:
-        conn.close()
-
-def get_expired_open_bets(current_time_iso):
-    """
     Returns bets where status='OPEN' and deadline <= current_time_iso.
     """
     conn = get_connection()

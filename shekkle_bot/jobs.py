@@ -1,9 +1,9 @@
 import logging
 import datetime
+import html
 from telegram.ext import ContextTypes
 from shekkle_bot.database import get_expired_open_bets, update_bet_status
 from shekkle_bot.config import ADMIN_IDS
-from shekkle_bot.utils.formatters import escape_markdown
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -24,32 +24,34 @@ async def check_deadlines(context: ContextTypes.DEFAULT_TYPE):
         for bet in expired_bets:
             # bet is a dict: {'id': ..., 'description': ...}
             bet_id = bet['id']
-            description = escape_markdown(bet['description'])
+            description = html.escape(bet['description'])
             
-            # Update status to PENDING
-            update_bet_status(bet_id, 'PENDING_RESOLUTION')
-            logger.info(f"Bet {bet_id} expired. Status updated to PENDING_RESOLUTION.")
+            # Update status to LOCKED
+            update_bet_status(bet_id, 'LOCKED')
+            logger.info(f"Bet {bet_id} expired. Status updated to LOCKED.")
             
-            # Notify Admins
-            # Using MarkdownV2 style escaping but parse_mode='Markdown' (v1) in original code.
-            # escape_markdown function escapes both * and _ which works for v1 too mostly if consistent.
-            # But v1 is tricky. Let's stick with what works for v1: *bold*, _italic_, `code`.
-            # If description has *, we escaped it to \*. v1 supports \*.
-            
+            # Notify Admins using HTML
             message = (
-                f"🚨 *Bet Expired!* 🚨\n\n"
-                f"ID: `{bet_id}`\n"
+                f"🚨 <b>Bet Expired!</b> 🚨\n\n"
+                f"ID: <code>{bet_id}</code>\n"
                 f"Desc: {description}\n\n"
                 f"Please resolve using:\n"
-                f"`/resolve {bet_id} A`\n"
-                f"`/resolve {bet_id} B`\n"
-                f"Or refund with:\n"
-                f"`/resolve {bet_id} REFUND`"
+                f"<code>/resolve {bet_id} A</code>\n"
+                f"<code>/resolve {bet_id} B</code>\n"
             )
             
+            if not ADMIN_IDS:
+                logger.warning("No ADMIN_IDS configured to notify.")
+                continue
+
             for admin_id in ADMIN_IDS:
                 try:
-                    await context.bot.send_message(chat_id=admin_id, text=message, parse_mode='Markdown')
+                    await context.bot.send_message(
+                        chat_id=int(admin_id), 
+                        text=message, 
+                        parse_mode='HTML'
+                    )
+                    logger.info(f"Notified admin {admin_id} about bet {bet_id}")
                 except Exception as e:
                     logger.error(f"Failed to notify admin {admin_id}: {e}")
 
