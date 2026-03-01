@@ -36,7 +36,9 @@ def init_db():
             option_a TEXT,
             option_b TEXT,
             outcome TEXT, -- NULL, 'A', or 'B'
-            status TEXT DEFAULT 'OPEN' -- 'OPEN', 'LOCKED', 'RESOLVED'
+            status TEXT DEFAULT 'OPEN', -- 'OPEN', 'LOCKED', 'RESOLVED'
+            cutoff_at TEXT, -- The effective time used for resolution (may be backdated)
+            resolved_at TEXT -- The actual time the resolution command was run
         )
     """)
 
@@ -49,6 +51,7 @@ def init_db():
             choice TEXT, -- 'A', 'B'
             amount INTEGER,
             placed_at TEXT,
+            refunded INTEGER DEFAULT 0,
             FOREIGN KEY(user_id) REFERENCES users(user_id),
             FOREIGN KEY(bet_id) REFERENCES bets(id)
         )
@@ -67,6 +70,14 @@ def init_db():
     except sqlite3.OperationalError:
         logger.info("Migrating wagers table: adding refunded column")
         c.execute("ALTER TABLE wagers ADD COLUMN refunded INTEGER DEFAULT 0")
+
+    # Check for new bets columns
+    try:
+        c.execute("SELECT cutoff_at FROM bets LIMIT 1")
+    except sqlite3.OperationalError:
+        logger.info("Migrating bets table: adding cutoff_at/resolved_at columns")
+        c.execute("ALTER TABLE bets ADD COLUMN cutoff_at TEXT")
+        c.execute("ALTER TABLE bets ADD COLUMN resolved_at TEXT")
 
     # Commit and close
     conn.commit()
@@ -449,7 +460,13 @@ def resolve_bet(bet_id, outcome, cutoff_dt=None):
         winning_pool = sum(w[3] for w in winning_wagers)
 
         # Update status
-        c.execute("UPDATE bets SET status = 'RESOLVED', outcome = ? WHERE id = ?", (outcome, bet_id))
+        now_ts = datetime.now().isoformat()
+        cutoff_ts = cutoff_val.isoformat() if cutoff_val else now_ts
+
+        c.execute(
+            "UPDATE bets SET status = 'RESOLVED', outcome = ?, resolved_at = ?, cutoff_at = ? WHERE id = ?", 
+            (outcome, now_ts, cutoff_ts, bet_id)
+        )
 
         msg_prefix = ""
         if refunded_count > 0:
