@@ -61,6 +61,13 @@ def init_db():
         logger.info("Migrating wagers table: adding placed_at column")
         c.execute("ALTER TABLE wagers ADD COLUMN placed_at TEXT")
 
+    # Check if refunded exists in wagers (migration for existing dbs)
+    try:
+        c.execute("SELECT refunded FROM wagers LIMIT 1")
+    except sqlite3.OperationalError:
+        logger.info("Migrating wagers table: adding refunded column")
+        c.execute("ALTER TABLE wagers ADD COLUMN refunded INTEGER DEFAULT 0")
+
     # Commit and close
     conn.commit()
     conn.close()
@@ -328,20 +335,33 @@ def place_wager(user_id, bet_id, choice, amount):
 
 def get_bet_wagers(bet_id):
     """
-    Returns all wagers for a specific bet.
+    Returns all valid (non-refunded) wagers for a specific bet.
     """
     conn = get_connection()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     try:
         # Join with users to get username
+        # Filter out refunded wagers
         query = """
             SELECT w.*, u.username 
             FROM wagers w 
             LEFT JOIN users u ON w.user_id = u.user_id 
-            WHERE w.bet_id = ?
+            WHERE w.bet_id = ? AND (w.refunded IS NULL OR w.refunded = 0)
         """
-        c.execute(query, (bet_id,))
+        try:
+            c.execute(query, (bet_id,))
+        except sqlite3.OperationalError:
+            # Fallback if refunded column doesn't exist
+            logger.warning("refunded column missing in wagers table during get_bet_wagers")
+            query_fallback = """
+                SELECT w.*, u.username 
+                FROM wagers w 
+                LEFT JOIN users u ON w.user_id = u.user_id 
+                WHERE w.bet_id = ?
+            """
+            c.execute(query_fallback, (bet_id,))
+            
         return [dict(row) for row in c.fetchall()]
     except Exception as e:
         logger.error(f"Error getting wagers for bet {bet_id}: {e}")
@@ -378,11 +398,11 @@ def resolve_bet(bet_id, outcome, cutoff_dt=None):
         # Get all wagers for this bet
         # Try to select placed_at, fall back to NULL if column somehow missing (should be handled by migration code but safe to be explicit)
         try:
-             c.execute("SELECT user_id, choice, amount, placed_at FROM wagers WHERE bet_id = ?", (bet_id,))
+             c.execute("SELECT id, user_id, choice, amount, placed_at FROM wagers WHERE bet_id = ?", (bet_id,))
         except sqlite3.OperationalError:
              # Fallback if migration failed or transient schema issue
              logger.warning("placed_at column missing in wagers table during resolve")
-             c.execute("SELECT user_id, choice, amount, NULL as placed_at FROM wagers WHERE bet_id = ?", (bet_id,))
+             c.execute("SELECT id, user_id, choice, amount, NULL as placed_at FROM wagers WHERE bet_id = ?", (bet_id,))
              
         all_wagers = c.fetchall()
 
@@ -402,7 +422,7 @@ def resolve_bet(bet_id, outcome, cutoff_dt=None):
                  cutoff_val = cutoff_dt
 
         for row in all_wagers:
-            user_id, choice, amount, placed_at_str = row
+            wager_id, user_id, choice, amount, placed_at_str = row
             
             should_keep = True
             if cutoff_val and placed_at_str:
@@ -418,13 +438,15 @@ def resolve_bet(bet_id, outcome, cutoff_dt=None):
             else:
                 # Refund
                 c.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, user_id))
+                # Mark as refunded
+                c.execute("UPDATE wagers SET refunded = 1 WHERE id = ?", (wager_id,))
                 refunded_count += 1
                 refunded_gross += amount
 
-        total_pool = sum(w[2] for w in valid_wagers)
+        total_pool = sum(w[3] for w in valid_wagers)
         # outcome is 'A' or 'B'
-        winning_wagers = [w for w in valid_wagers if w[1] == outcome]
-        winning_pool = sum(w[2] for w in winning_wagers)
+        winning_wagers = [w for w in valid_wagers if w[2] == outcome]
+        winning_pool = sum(w[3] for w in winning_wagers)
 
         # Update status
         c.execute("UPDATE bets SET status = 'RESOLVED', outcome = ? WHERE id = ?", (outcome, bet_id))
@@ -436,9 +458,11 @@ def resolve_bet(bet_id, outcome, cutoff_dt=None):
         # Case 1: No winners (Refund everyone if pool > 0)
         if winning_pool == 0:
             if total_pool > 0:
-                # Refund everyone
-                for user_id, choice, amount, _ in valid_wagers:
+                # Refund everyone remaining valid
+                for wager_id, user_id, choice, amount, _ in valid_wagers:
                     c.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, user_id))
+                    # Mark as refunded since the bet was cancelled/refunded
+                    c.execute("UPDATE wagers SET refunded = 1 WHERE id = ?", (wager_id,))
                 
                 conn.commit()
                 return True, f"{msg_prefix}No one bet on {outcome}. All {total_pool} refunded."
@@ -452,7 +476,7 @@ def resolve_bet(bet_id, outcome, cutoff_dt=None):
         payout_ratio = total_pool / winning_pool
         
         winners_count = 0
-        for user_id, choice, amount, _ in winning_wagers:
+        for _, user_id, choice, amount, _ in winning_wagers:
             payout = int(amount * payout_ratio) # integer math acts as floor
             c.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (payout, user_id))
             winners_count += 1
@@ -499,24 +523,13 @@ def get_leaderboard_data():
                 continue # Should not happen if resolved
 
             # Get wagers for this bet
-            # Note: We need to handle the case where resolve_bet refunded some wagers.
-            # However, refunds delete the wager or we don't track them well? 
-            # Wait, the current resolve_bet does NOT delete wagers, nor does it mark them as refunded in the DB.
-            # It just updates user balance.
-            # AND the 'placed_at' check is dynamic in resolve_bet, it doesn't delete the row.
-            # THIS IS A PROBLEM for accurate stats if I don't know which passed the cutoff.
-            # BUT, usually people won't query old items with a cutoff often.
-            # Assuming for now existing wagers in DB are valid.
-            # (Refunding in resolve_bet did NOT delete the wager row, just credited balance back).
-            # To be perfectly accurate, resolve_bet SHOULD properly flag the wager as refunded or delete it.
-            # Current implementation of resolve_bet does:
-            # c.execute("UPDATE users SET balance ...")
-            # It does NOT remove the wager from the table.
-            # So stats might be slightly off if retroactive refunds happened.
-            # For this task, I will accept this limitation or I should have updated resolve_bet to delete refunded wagers.
-            # Let's assume standard flow.
-            
-            c.execute("SELECT user_id, choice, amount FROM wagers WHERE bet_id = ?", (bet_id,))
+            # Filter out refunded wagers (refunded != 1 or NULL)
+            try:
+                c.execute("SELECT user_id, choice, amount FROM wagers WHERE bet_id = ? AND (refunded IS NULL OR refunded = 0)", (bet_id,))
+            except sqlite3.OperationalError:
+                # Column might not exist if migration failed, fallback
+                c.execute("SELECT user_id, choice, amount FROM wagers WHERE bet_id = ?", (bet_id,))
+
             bet_wagers = c.fetchall()
 
             if not bet_wagers:
