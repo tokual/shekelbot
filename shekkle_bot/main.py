@@ -19,6 +19,7 @@ async def post_init(application):
         BotCommand("daily", "Claim reward"),
         BotCommand("bets", "List open bets"),
         BotCommand("leaderboard", "Top winners"),
+        BotCommand("loserboard", "Top losers"),
         BotCommand("history", "View last 5 bets"),
         BotCommand("createbet", "New bet")
     ]
@@ -65,6 +66,7 @@ def main():
     # Add Leaderboard Handlers
     application.add_handler(CommandHandler("leaderboard", leaderboard.show_leaderboard))
     application.add_handler(CommandHandler("loserboard", leaderboard.show_loserboard))
+    application.add_handler(CallbackQueryHandler(leaderboard.board_page_callback, pattern='^page_board_'))
 
     # Add Betting Handlers
     application.add_handler(betting.createbet_conv_handler)
