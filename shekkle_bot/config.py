@@ -11,7 +11,7 @@ DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(os.path.dirname(__fi
 
 # Admin Configuration
 _admin_ids_str = os.getenv("ADMIN_IDS", "")
-ADMIN_IDS = [int(id_str.strip()) for id_str in _admin_ids_str.split(",") if id_str.strip().isdigit()]
+ADMIN_IDS = [int(x.strip()) for x in _admin_ids_str.split(",") if x.strip().isdigit()]
 
 # Economy Settings
 INITIAL_BALANCE = 100

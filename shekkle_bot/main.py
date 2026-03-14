@@ -15,13 +15,12 @@ logging.basicConfig(
 async def post_init(application):
     user_commands = [
         BotCommand("start", "Join"),
+        BotCommand("profile", "View your stats and balance"),
         BotCommand("daily", "Claim reward"),
-        BotCommand("balance", "Check funds"),
-        BotCommand("history", "View last 5 bets"),
-        BotCommand("createbet", "New bet"),
         BotCommand("bets", "List open bets"),
         BotCommand("leaderboard", "Top winners"),
-        BotCommand("loserboard", "Top losers"),
+        BotCommand("history", "View last 5 bets"),
+        BotCommand("createbet", "New bet")
     ]
     
     admin_commands = user_commands + [
