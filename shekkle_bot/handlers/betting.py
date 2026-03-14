@@ -303,6 +303,18 @@ async def view_bets_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mult_a = (total_pool / amount_a) if amount_a > 0 else 0.0
     mult_b = (total_pool / amount_b) if amount_b > 0 else 0.0
 
+    # Calculate proportions
+    percent_a = 50
+    percent_b = 50
+    if total_pool > 0:
+        percent_a = int((amount_a / total_pool) * 100)
+        percent_b = 100 - percent_a
+
+    # Generate progress bar (10 blocks = 10% each)
+    blocks_a = round(percent_a / 10)
+    blocks_b = 10 - blocks_a
+    progress_bar = "🟦" * blocks_a + "🟥" * blocks_b
+
     # Format wagers list
     # We must escape names too as they can contain html chars
     def format_wager_list(w_list):
@@ -312,7 +324,6 @@ async def view_bets_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for w in w_list:
             raw_name = w.get('username') or f"User {w['user_id']}"
             safe_name = html.escape(raw_name)
-            # escape amount just in case? Numbers are safe though.
             formatted_entries.append(f"{safe_name} ({w['amount']})")
         return ", ".join(formatted_entries)
 
@@ -327,13 +338,13 @@ async def view_bets_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
         f"📊 <b>Bet #{bet_id} Status</b>\n"
         f"📝 {desc}\n\n"
-        f"🅰️ <b>Option A</b>: {opt_a}\n"
-        f"💰 Pool: {amount_a} {CURRENCY_NAME}\n"
-        f"📈 Payout Ratio: {mult_a:.2f}x\n"
+        f"<b>Pool Favor: {percent_a}% A / {percent_b}% B</b>\n"
+        f"{progress_bar}\n\n"
+        f"🟦 <b>Option A</b>: {opt_a}\n"
+        f"💰 Pool: {amount_a} {CURRENCY_NAME} ({mult_a:.2f}x)\n"
         f"👥 Bets: {bets_a_str}\n\n"
-        f"🅱️ <b>Option B</b>: {opt_b}\n"
-        f"💰 Pool: {amount_b} {CURRENCY_NAME}\n"
-        f"📈 Payout Ratio: {mult_b:.2f}x\n"
+        f"🟥 <b>Option B</b>: {opt_b}\n"
+        f"💰 Pool: {amount_b} {CURRENCY_NAME} ({mult_b:.2f}x)\n"
         f"👥 Bets: {bets_b_str}\n\n"
         f"Total Pool: {total_pool} {CURRENCY_NAME}"
     )

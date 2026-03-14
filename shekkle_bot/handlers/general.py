@@ -1,7 +1,14 @@
-from telegram import Update
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 import shekkle_bot.database as db
 from shekkle_bot.config import DAILY_REWARD
+
+def get_main_keyboard():
+    keyboard = [
+        ["🎁 Daily Reward", "💰 My Profile"],
+        ["📜 Open Bets", "🏆 Leaderboard"]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, persistent=True)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -15,8 +22,41 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     balance = user_obj.balance if user_obj else 0
     
     await update.message.reply_text(
-        f"Welcome {user.first_name}! You have {balance} Shekkles."
+        f"Welcome {user.first_name}! You have {balance} Shekkles.\n\n"
+        f"Use the buttons below to navigate.",
+        reply_markup=get_main_keyboard()
     )
+
+async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if not user:
+        return
+        
+    user_obj = db.get_user(user.id)
+    if not user_obj:
+        db.add_user(user.id, user.username)
+        user_obj = db.get_user(user.id)
+        
+    winners, _ = db.get_leaderboard_data()
+    my_stats = next((u for u in winners if u.get('user_id') == user.id), None)
+    
+    if my_stats:
+        won = my_stats['bets_won']
+        total = my_stats['bets_placed']
+        win_rate = (won / total * 100) if total > 0 else 0
+        profit = my_stats['net_profit']
+        stats_str = f"📊 Win Rate: {win_rate:.1f}% ({won} Won / {total-won} Lost)\n💵 Total Profit: {profit} Shekkles"
+    else:
+        stats_str = "📊 No bets placed yet."
+
+    msg = (
+        f"👤 <b>User:</b> @{user.username or user.first_name}\n"
+        f"💰 <b>Balance:</b> {user_obj.balance} Shekkles\n"
+        f"{stats_str}\n\n"
+        f"<i>Use /history to see your past bets</i>"
+    )
+    
+    await update.message.reply_text(msg, parse_mode='HTML')
 
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user

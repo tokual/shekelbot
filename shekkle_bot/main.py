@@ -1,7 +1,7 @@
 import logging
 import os
 from telegram import BotCommand, BotCommandScopeChat, BotCommandScopeDefault
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 from shekkle_bot.config import TOKEN, ADMIN_IDS
 from shekkle_bot.database import init_db
 from shekkle_bot.handlers import general, betting, admin, leaderboard
@@ -53,8 +53,15 @@ def main():
     # Add General Handlers
     application.add_handler(CommandHandler("start", general.start))
     application.add_handler(CommandHandler("balance", general.balance))
+    application.add_handler(CommandHandler("profile", general.profile))
     application.add_handler(CommandHandler("daily", general.daily))
     application.add_handler(CommandHandler("history", general.history))
+    
+    # Text-button Handlers 
+    application.add_handler(MessageHandler(filters.Regex("^🎁 Daily Reward$"), general.daily))
+    application.add_handler(MessageHandler(filters.Regex("^💰 My Profile$"), general.profile))
+    application.add_handler(MessageHandler(filters.Regex("^📜 Open Bets$"), betting.list_bets))
+    application.add_handler(MessageHandler(filters.Regex("^🏆 Leaderboard$"), leaderboard.show_leaderboard))
     
     # Add Leaderboard Handlers
     application.add_handler(CommandHandler("leaderboard", leaderboard.show_leaderboard))

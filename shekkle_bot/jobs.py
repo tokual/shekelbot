@@ -14,8 +14,11 @@ async def check_deadlines(context: ContextTypes.DEFAULT_TYPE):
     Job to check for betting deadlines.
     """
     try:
-        now_iso = datetime.datetime.now().isoformat()
-        expired_bets = get_expired_open_bets(now_iso)
+        # Get UTC time and format to match how bets store it (e.g. YYYY-MM-DD HH:MM)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        now_str = now.strftime('%Y-%m-%d %H:%M')
+        
+        expired_bets = get_expired_open_bets(now_str)
 
         if not expired_bets:
             return

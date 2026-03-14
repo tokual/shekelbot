@@ -375,6 +375,10 @@ def get_leaderboard_data():
                     s['net_profit'] -= w.amount
 
         active_stats = [s for s in stats.values() if s['bets_placed'] > 0]
+        # Include user_id in dictionaries so we can find 'My Rank'
+        for k, v in stats.items():
+            v['user_id'] = k
+            
         winners = sorted(active_stats, key=lambda x: x['net_profit'], reverse=True)
         losers = sorted(active_stats, key=lambda x: x['net_profit'])
 

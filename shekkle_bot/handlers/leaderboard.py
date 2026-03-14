@@ -15,15 +15,34 @@ async def show_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = f"🏆 <b>Top Winners</b> 🏆\n\n"
     
     # Show top 10
-    for i, user in enumerate(winners[:10], 1):
-        username = html.escape(user['username']) if user['username'] else "Unknown"
-        profit = user['net_profit']
-        won = user['bets_won']
-        total = user['bets_placed']
-        win_rate = (won / total * 100) if total > 0 else 0
-        
-        msg += f"{i}. <b>{username}</b>: {profit}\n"
-        msg += f"   (Won: {won}/{total} | WR: {win_rate:.1f}%)\n"
+    my_rank = None
+    user_id = update.effective_user.id
+    
+    for i, user in enumerate(winners, 1):
+        if user['user_id'] == user_id:
+            my_rank = (i, user)
+            
+        if i <= 10:
+            username = html.escape(user['username']) if user['username'] else "Unknown"
+            profit = user['net_profit']
+            won = user['bets_won']
+            total = user['bets_placed']
+            win_rate = (won / total * 100) if total > 0 else 0
+            
+            if i == 1:
+                medal = "🥇"
+            elif i == 2:
+                medal = "🥈"
+            elif i == 3:
+                medal = "🥉"
+            else:
+                medal = f"{i}."
+                
+            msg += f"{medal} <b>{username}</b>: {profit}\n"
+            msg += f"   (Won: {won}/{total} | WR: {win_rate:.1f}%)\n"
+
+    if my_rank and my_rank[0] > 10:
+        msg += f"\n...\n<b>{my_rank[0]}. YOU</b>: {my_rank[1]['net_profit']} (WR: {(my_rank[1]['bets_won']/max(1, my_rank[1]['bets_placed'])*100):.1f}%)\n"
 
     await update.message.reply_text(msg, parse_mode='HTML')
 
