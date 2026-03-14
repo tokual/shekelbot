@@ -17,6 +17,7 @@ async def post_init(application):
         BotCommand("start", "Join"),
         BotCommand("daily", "Claim reward"),
         BotCommand("balance", "Check funds"),
+        BotCommand("history", "View last 5 bets"),
         BotCommand("createbet", "New bet"),
         BotCommand("bets", "List open bets"),
         BotCommand("leaderboard", "Top winners"),
@@ -53,6 +54,7 @@ def main():
     application.add_handler(CommandHandler("start", general.start))
     application.add_handler(CommandHandler("balance", general.balance))
     application.add_handler(CommandHandler("daily", general.daily))
+    application.add_handler(CommandHandler("history", general.history))
     
     # Add Leaderboard Handlers
     application.add_handler(CommandHandler("leaderboard", leaderboard.show_leaderboard))
@@ -65,6 +67,8 @@ def main():
     application.add_handler(CommandHandler("wager", betting.wager))
     application.add_handler(CallbackQueryHandler(betting.wager_button, pattern='^wager:'))
     application.add_handler(CallbackQueryHandler(betting.view_bets_button, pattern='^view_bets:'))
+    application.add_handler(CallbackQueryHandler(betting.bet_page_button, pattern='^page_bet:'))
+    application.add_handler(CallbackQueryHandler(lambda u, c: u.callback_query.answer(), pattern='^ignore$'))
 
     # Add Admin Handlers
     application.add_handler(CommandHandler("resolve", admin.resolve))
