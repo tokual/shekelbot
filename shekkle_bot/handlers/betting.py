@@ -320,11 +320,25 @@ async def view_bets_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     def format_wager_list(w_list):
         if not w_list:
             return "None"
-        formatted_entries = []
+            
+        # Aggregate amounts per user
+        aggregated = {}
         for w in w_list:
-            raw_name = w.get('username') or f"User {w['user_id']}"
-            safe_name = html.escape(raw_name)
-            formatted_entries.append(f"{safe_name} ({w['amount']})")
+            user_id = w['user_id']
+            if user_id not in aggregated:
+                aggregated[user_id] = {
+                    'username': w.get('username') or f"User {user_id}",
+                    'amount': 0
+                }
+            aggregated[user_id]['amount'] += w['amount']
+            
+        formatted_entries = []
+        # Sort by highest wager amount
+        sorted_users = sorted(aggregated.values(), key=lambda x: x['amount'], reverse=True)
+        
+        for u in sorted_users:
+            safe_name = html.escape(u['username'])
+            formatted_entries.append(f"{safe_name} ({u['amount']})")
         return ", ".join(formatted_entries)
 
     bets_a_str = format_wager_list(pool_a_list)
